@@ -6,6 +6,7 @@ import {
   loadSubDays, saveSubDays,
   loadPushConfig,
   loadClassroomLog, saveClassroomLog,
+  loadDisplaySettings, saveDisplaySettings,
 } from './driveStorage';
 import {
   ChevronLeft, ChevronRight, Calendar, Clock, BookOpen,
@@ -16,6 +17,8 @@ import {
 import SubPlanModal from "./SubPlanModal";
 import SubPlanPreflightModal from "./SubPlanPreflightModal";
 import BellRingerPush from "./BellRingerPush";
+import DisplayExport from "./DisplayExport";
+import { resolveAgenda, displayClassForCourse, DEFAULT_STANDING_AGENDA } from "./displayExport";
 import { generateSubPlan } from "./generateSubPlan";
 
 // ─── CONSTANTS (mirrors Phase 1 design system) ───────────────────────────────
@@ -412,7 +415,7 @@ function QuickNote({ dateStr: ds, existingNote, lesson, onSave, onClose, pathway
 
 // ─── DETAIL PANEL ────────────────────────────────────────────────────────────
 
-function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNoteChange, onBellRingerChange, onInstructionsChange, onResourcesChange, pathwayColor, pushConfig, classroomLog, onClassroomPosted, mondayStr }) {
+function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNoteChange, onBellRingerChange, onAgendaChange, standingAgenda, onInstructionsChange, onResourcesChange, pathwayColor, pushConfig, classroomLog, onClassroomPosted, mondayStr }) {
   const note = weeklyData?.[dateKey]?.note || "";
   const [localNote, setLocalNote] = useState(note);
   const [noteDirty, setNoteDirty] = useState(false);
@@ -424,6 +427,11 @@ function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNo
   const currentBR = getBellRinger(lesson, dayIndex);
   const [localBR, setLocalBR] = useState(currentBR);
   const [brDirty, setBrDirty] = useState(false);
+
+  // Display agenda for this day (blank = standing agenda)
+  const currentAgenda = Array.isArray(lesson?.agendas) ? (lesson.agendas[dayIndex - 1] || "") : "";
+  const [localAgenda, setLocalAgenda] = useState(currentAgenda);
+  const [agendaDirty, setAgendaDirty] = useState(false);
 
   // Classroom instructions editable state
   const [localInstructions, setLocalInstructions] = useState(lesson?.classroomInstructions || "");
@@ -601,6 +609,12 @@ function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNo
   useEffect(() => {
     setLocalBR(getBellRinger(lesson, dayMeta?.dayIndex || 1));
     setBrDirty(false);
+  }, [lesson?.id, dayMeta?.dayIndex]);
+
+  // Reset display agenda when lesson/day changes
+  useEffect(() => {
+    setLocalAgenda(Array.isArray(lesson?.agendas) ? (lesson.agendas[(dayMeta?.dayIndex || 1) - 1] || "") : "");
+    setAgendaDirty(false);
   }, [lesson?.id, dayMeta?.dayIndex]);
 
   // Reset instructions when lesson changes
@@ -1091,6 +1105,41 @@ function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNo
         )}
       </div>
 
+      {/* Classroom display agenda — editable, blank uses the standing agenda */}
+      <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}` }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: D.text2, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>
+          📺 Display agenda{(lesson?.estimatedDays || 1) > 1 ? ` — Day ${dayIndex} of ${lesson?.estimatedDays}` : ""}
+        </div>
+        <textarea
+          value={localAgenda}
+          onChange={e => { setLocalAgenda(e.target.value); setAgendaDirty(true); }}
+          placeholder={"Standing agenda:\n" + resolveAgenda(lesson, dayIndex, standingAgenda).join("\n")}
+          style={{
+            ...inputStyle, minHeight: 72, resize: "vertical", fontSize: 13, lineHeight: 1.55,
+            borderColor: agendaDirty ? pathwayColor : undefined,
+          }}
+        />
+        <div style={{ fontSize: 11, color: D.text2, marginTop: 4 }}>
+          Leave blank to use the standing agenda. One step per line.
+        </div>
+        {agendaDirty && (
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button
+              onClick={() => { if (onAgendaChange) onAgendaChange(lesson, dayIndex, localAgenda.trim()); setAgendaDirty(false); }}
+              style={{ ...btnStyle, color: pathwayColor, borderColor: `${pathwayColor}60`, fontWeight: 600, fontSize: 12, padding: "5px 12px" }}
+            >
+              Save agenda
+            </button>
+            <button
+              onClick={() => { setLocalAgenda(currentAgenda); setAgendaDirty(false); }}
+              style={{ ...btnStyle, fontSize: 12, padding: "5px 12px" }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Master notes (from Phase 1) */}
       {lesson.notes && (
         <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}` }}>
@@ -1542,6 +1591,7 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
   const [quickNoteDay, setQuickNoteDay] = useState(null);
   const [subDayModal, setSubDayModal] = useState(null);
   const [subDays, setSubDays] = useState({});
+  const [displaySettings, setDisplaySettings] = useState({ agendas: {} });
   const [preflightOpen, setPreflightOpen] = useState(false);
   const saveTimer = useRef(null);
 
@@ -1593,6 +1643,7 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
       setMappings(newMaps);
       setOverflows(newOvfls);
       setSubDays(await loadSubDays());
+      setDisplaySettings(await loadDisplaySettings());
     }
     sync();
   }, [isActive, calendarVersion]);
@@ -1647,6 +1698,7 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
       setMappings(maps);
       setOverflows(ovfl);
       setSubDays(await loadSubDays());
+      setDisplaySettings(await loadDisplaySettings());
       // Load bell ringer push config (reused for Classroom posting)
       const pCfg = await loadPushConfig(selectedCourse);
       if (pCfg) setPushConfig(pCfg);
@@ -1769,6 +1821,39 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
         if (onCurriculaChange) onCurriculaChange(next);
       }
     } catch (_) {}
+  };
+
+  // ── Classroom display: one day's agenda, stored per lesson day like bell ringers
+  const handleAgendaChange = (lesson, dayIndex, newText) => {
+    try {
+      const curriculum = curricula[selectedCourse];
+      if (!curriculum) return;
+      let updated = false;
+      const newCurriculum = {
+        ...curriculum,
+        units: curriculum.units.map(unit => ({
+          ...unit,
+          lessons: unit.lessons.map(l => {
+            if (l.id !== lesson.id) return l;
+            const agendas = Array.isArray(l.agendas) ? [...l.agendas] : [];
+            while (agendas.length < dayIndex) agendas.push("");
+            agendas[dayIndex - 1] = newText;
+            updated = true;
+            return { ...l, agendas };
+          }),
+        })),
+      };
+      if (updated) {
+        const next = { ...curricula, [selectedCourse]: newCurriculum };
+        setCurricula(next);
+        if (onCurriculaChange) onCurriculaChange(next);
+      }
+    } catch (_) {}
+  };
+
+  const handleDisplaySettingsChange = (next) => {
+    setDisplaySettings(next);
+    saveDisplaySettings(next);
   };
 
   // ── Bell ringer inline edit — writes back to Drive via onCurriculaChange
@@ -2368,6 +2453,18 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
                 mondayStr={currentMonday}
                 driveReady={driveReady}
               />
+
+              <DisplayExport
+                selectedCourse={selectedCourse}
+                mondayStr={currentMonday}
+                curricula={curricula}
+                mappings={mappings}
+                calendarConfig={calendarConfig}
+                subDays={subDays}
+                displaySettings={displaySettings}
+                onDisplaySettingsChange={handleDisplaySettingsChange}
+                pathwayColor={pathwayColor}
+              />
             </>
           )}
         </div>
@@ -2383,6 +2480,8 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
             onClose={() => setSelectedDay(null)}
             onNoteChange={handleNoteChange}
             onBellRingerChange={handleBellRingerChange}
+            onAgendaChange={handleAgendaChange}
+            standingAgenda={displaySettings?.agendas?.[displayClassForCourse(selectedCourse)?.id] || DEFAULT_STANDING_AGENDA}
             onInstructionsChange={handleClassroomInstructionsChange}
             onResourcesChange={handleResourcesChange}
             pathwayColor={pathwayColor}

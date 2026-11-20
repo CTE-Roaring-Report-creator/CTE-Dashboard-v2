@@ -30,6 +30,7 @@ export const ALL_KEYS = [
   'custom-standards',
   'calendar-config',
   'sub-days',
+  'display-settings',
   ...COURSE_IDS.flatMap(id => [
     `curriculum-${id}`,
     `weekly-data-${id}`,
@@ -636,6 +637,16 @@ export async function loadSubDays() {
 }
 export async function saveSubDays(data) {
   return writeFile('sub-days', data);
+}
+
+// ─── CLASSROOM DISPLAY ────────────────────────────────────────────────────────
+// Standing agenda per display class: { agendas: { 'intro-tech': [...], ... } }
+
+export async function loadDisplaySettings() {
+  return (await readFile('display-settings')) || { agendas: {} };
+}
+export async function saveDisplaySettings(data) {
+  return writeFile('display-settings', data);
 }
 
 export async function loadPushConfig(courseId) {
