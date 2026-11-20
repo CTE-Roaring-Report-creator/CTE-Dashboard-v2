@@ -1806,8 +1806,10 @@ function Toast({ message, onDismiss }) {
 
 // ─── LESSON LIBRARY SIDEBAR ──────────────────────────────────────────────────
 
-function LessonLibrarySidebar({ curriculum, calendarConfig, viewMonth, viewYear, pathwayColor, semFilter, onSemFilterChange, onDragStart, onDragEnd, onClose }) {
+function LessonLibrarySidebar({ curriculum, calendarConfig, viewMonth, viewYear, pathwayColor, semFilter, onSemFilterChange, onDragStart, onDragEnd, onClose, firstPlaced, placingId, onPick }) {
   const [expandedUnits, setExpandedUnits] = useState({});
+  const [query, setQuery] = useState("");
+  const [unplacedOnly, setUnplacedOnly] = useState(false);
 
   const units = curriculum?.units || [];
 
@@ -1818,18 +1820,35 @@ function LessonLibrarySidebar({ curriculum, calendarConfig, viewMonth, viewYear,
     : false;
   const autoSem = inSem2 ? "Spring" : "Fall";
 
-  // Filter units by semester
-  const filteredUnits = units.filter(u => {
-    const ef = semFilter === "auto" ? autoSem : semFilter;
-    if (ef === "all") return true;
-    if (!u.semester) return true; // no tag — show always
-    return u.semester === ef;
-  });
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+  const lessonMatches = (lesson, unit) =>
+    (!unplacedOnly || !firstPlaced[lesson.id]) &&
+    (!searching
+      || (lesson.title || "").toLowerCase().includes(q)
+      || (unit.title || "").toLowerCase().includes(q));
+
+  // Semester filter applies when browsing; a search looks through every unit.
+  const filteredUnits = units
+    .filter(u => {
+      if (searching) return true;
+      const ef = semFilter === "auto" ? autoSem : semFilter;
+      if (ef === "all") return true;
+      if (!u.semester) return true; // no tag — show always
+      return u.semester === ef;
+    })
+    .map(u => ({ unit: u, lessons: (u.lessons || []).filter(l => lessonMatches(l, u)) }))
+    .filter(({ lessons }) => lessons.length > 0 || (!searching && !unplacedOnly));
 
   const toggleUnit = (uid) => setExpandedUnits(e => ({ ...e, [uid]: !e[uid] }));
-  const isUnitExpanded = (uid) => expandedUnits[uid] === true; // default collapsed
+  // Searching or filtering opens every unit that has a match.
+  const isUnitExpanded = (uid) => searching || unplacedOnly || expandedUnits[uid] === true;
 
   const semLabel = semFilter === "auto" ? autoSem : semFilter === "all" ? "All" : semFilter;
+  const shortDate = (ds) => {
+    const [y, m, d] = ds.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
 
   return (
     <div style={{
@@ -1854,44 +1873,66 @@ function LessonLibrarySidebar({ curriculum, calendarConfig, viewMonth, viewYear,
         </button>
       </div>
 
-      {/* Semester filter */}
-      <div style={{ padding: "8px 12px", borderBottom: `1px solid ${D.border0}`, display: "flex", gap: 4, flexShrink: 0 }}>
-        {[
-          { value: "auto", label: `Auto (${autoSem})` },
-          { value: "Fall",   label: "Fall" },
-          { value: "Spring", label: "Spring" },
-          { value: "all",    label: "All" },
-        ].map(opt => (
-          <button
-            key={opt.value}
-            onClick={() => onSemFilterChange(opt.value)}
-            style={{
-              flex: 1, padding: "4px 0", borderRadius: 6, fontSize: 11,
-              fontWeight: semFilter === opt.value ? 600 : 400,
-              border: semFilter === opt.value ? `1.5px solid ${pathwayColor}` : `1px solid ${D.border1}`,
-              background: semFilter === opt.value ? pathwayColor + "22" : D.bg3,
-              color: semFilter === opt.value ? pathwayColor : D.text2,
-              cursor: "pointer", fontFamily: "inherit",
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
+      {/* Search */}
+      <div style={{ padding: "8px 12px 0", flexShrink: 0 }}>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === "Escape") setQuery(""); }}
+          placeholder="Search lessons…"
+          style={{
+            width: "100%", boxSizing: "border-box", padding: "7px 10px",
+            borderRadius: 7, border: `1.5px solid ${q ? pathwayColor : D.border1}`,
+            background: D.bg3, color: D.text0, fontSize: 12, fontFamily: "inherit", outline: "none",
+          }}
+        />
       </div>
 
-      {/* Drag hint */}
+      {/* Semester filter + unplaced toggle */}
+      <div style={{ padding: "8px 12px", borderBottom: `1px solid ${D.border0}`, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 4, opacity: searching ? 0.4 : 1 }}>
+          {[
+            { value: "auto", label: `Auto (${autoSem})` },
+            { value: "Fall",   label: "Fall" },
+            { value: "Spring", label: "Spring" },
+            { value: "all",    label: "All" },
+          ].map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => onSemFilterChange(opt.value)}
+              disabled={searching}
+              style={{
+                flex: 1, padding: "4px 0", borderRadius: 6, fontSize: 11,
+                fontWeight: semFilter === opt.value ? 600 : 400,
+                border: semFilter === opt.value ? `1.5px solid ${pathwayColor}` : `1px solid ${D.border1}`,
+                background: semFilter === opt.value ? pathwayColor + "22" : D.bg3,
+                color: semFilter === opt.value ? pathwayColor : D.text2,
+                cursor: searching ? "default" : "pointer", fontFamily: "inherit",
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 11, color: D.text1, cursor: "pointer" }}>
+          <input type="checkbox" checked={unplacedOnly} onChange={e => setUnplacedOnly(e.target.checked)} />
+          Only lessons not on the calendar
+        </label>
+      </div>
+
+      {/* Hint */}
       <div style={{ padding: "6px 12px", borderBottom: `1px solid ${D.border0}`, flexShrink: 0 }}>
-        <span style={{ fontSize: 10, color: D.text2 }}>Drag a lesson onto a calendar date to place it</span>
+        <span style={{ fontSize: 10, color: D.text2 }}>Click a lesson, then click a day · or drag it onto the calendar</span>
       </div>
 
-      {/* Unit list */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+      {/* Unit list — scrolls on its own; bottom padding clears the phase switcher */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 0 88px" }}>
         {filteredUnits.length === 0 && (
           <div style={{ padding: "20px 14px", fontSize: 12, color: D.text2, textAlign: "center", fontStyle: "italic" }}>
-            No {semLabel} units found
+            {searching ? `No lessons match "${query}"` : unplacedOnly ? "Every lesson is on the calendar" : `No ${semLabel} units found`}
           </div>
         )}
-        {filteredUnits.map(unit => {
+        {filteredUnits.map(({ unit, lessons }) => {
           const isExpanded = isUnitExpanded(unit.id);
           const totalDays = (unit.lessons || []).reduce((s, l) => s + (l.estimatedDays || 1), 0);
           return (
@@ -1958,12 +1999,16 @@ function LessonLibrarySidebar({ curriculum, calendarConfig, viewMonth, viewYear,
               </div>
 
               {/* Lessons */}
-              {isExpanded && (unit.lessons || []).map(lesson => {
+              {isExpanded && lessons.map(lesson => {
                 const typeMeta = LESSON_TYPE_META[lesson.type] || LESSON_TYPE_META.instruction;
+                const placed = firstPlaced[lesson.id];
+                const isPicked = placingId === lesson.id;
+                const restBg = isPicked ? pathwayColor + "33" : D.bg1;
                 return (
                   <div
                     key={lesson.id}
                     draggable
+                    onClick={() => onPick(isPicked ? null : { lesson, unit })}
                     onDragStart={e => {
                       e.stopPropagation();
                       onDragStart(lesson, unit);
@@ -1975,13 +2020,13 @@ function LessonLibrarySidebar({ curriculum, calendarConfig, viewMonth, viewYear,
                       display: "flex", alignItems: "flex-start", gap: 8,
                       padding: "7px 14px 7px 22px",
                       borderBottom: `1px solid ${D.border0}`,
-                      cursor: "grab", userSelect: "none",
-                      borderLeft: `3px solid ${typeMeta.accent}`,
-                      background: D.bg1,
+                      cursor: "pointer", userSelect: "none",
+                      borderLeft: `3px solid ${isPicked ? pathwayColor : typeMeta.accent}`,
+                      background: restBg,
                       transition: "background 0.1s",
                     }}
-                    onMouseEnter={e => e.currentTarget.style.background = D.bg2}
-                    onMouseLeave={e => e.currentTarget.style.background = D.bg1}
+                    onMouseEnter={e => { if (!isPicked) e.currentTarget.style.background = D.bg2; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = restBg; }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: D.text0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.3 }}>
@@ -1998,6 +2043,9 @@ function LessonLibrarySidebar({ curriculum, calendarConfig, viewMonth, viewYear,
                         </span>
                         <span style={{ fontSize: 10, color: D.text2 }}>
                           {lesson.estimatedDays || 1}d
+                        </span>
+                        <span style={{ fontSize: 10, marginLeft: "auto", color: placed ? D.text2 : "#f59e0b", fontWeight: placed ? 400 : 600 }}>
+                          {placed ? `✓ ${shortDate(placed)}` : "Not placed"}
                         </span>
                       </div>
                       {lesson.objective && (
@@ -2042,6 +2090,28 @@ export default function Phase3({ isActive, selectedCourse: selectedCourseProp, c
   const [showLibrary, setShowLibrary] = useState(false);
   const [librarySemFilter, setLibrarySemFilter] = useState("auto"); // "auto" | "all" | "Fall" | "Spring"
   const [libraryDragLesson, setLibraryDragLesson] = useState(null); // { lesson, unit }
+  const [placing, setPlacing] = useState(null);                       // click-to-place: { lesson, unit }
+
+  // Measure the sticky header so the library can pin itself just below it.
+  const headerRef = useRef(null);
+  const [headerH, setHeaderH] = useState(64);
+  useEffect(() => {
+    if (!headerRef.current || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setHeaderH(Math.round(e.target.getBoundingClientRect().height)));
+    ro.observe(headerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // A picked lesson belongs to one course; drop it when the course changes.
+  useEffect(() => { setPlacing(null); }, [selectedCourse]);
+
+  // Esc cancels click-to-place.
+  useEffect(() => {
+    if (!placing) return;
+    const onKey = (e) => { if (e.key === "Escape") setPlacing(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [placing]);
   const [contextMenu, setContextMenu] = useState(null);
   const [popup, setPopup] = useState(null); // { dateKey }
   const [swapError, setSwapError] = useState(null);
@@ -3191,7 +3261,7 @@ export default function Phase3({ isActive, selectedCourse: selectedCourseProp, c
       })()}
 
       {/* ── Header */}
-      <div style={{
+      <div ref={headerRef} style={{
         position: "sticky", top: 0, zIndex: 1000,
         background: D.bg1, borderBottom: `1.5px solid ${D.border1}`,
         boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
@@ -3314,6 +3384,10 @@ export default function Phase3({ isActive, selectedCourse: selectedCourseProp, c
 
       {/* Library sidebar */}
       {showLibrary && (
+        <div style={{
+          position: "sticky", top: headerH, alignSelf: "flex-start",
+          height: `calc(100vh - ${headerH}px)`, display: "flex", flexShrink: 0,
+        }}>
         <LessonLibrarySidebar
           curriculum={curriculum}
           calendarConfig={calendarConfig}
@@ -3324,11 +3398,37 @@ export default function Phase3({ isActive, selectedCourse: selectedCourseProp, c
           onSemFilterChange={setLibrarySemFilter}
           onDragStart={(lesson, unit) => setLibraryDragLesson({ lesson, unit })}
           onDragEnd={() => setLibraryDragLesson(null)}
-          onClose={() => setShowLibrary(false)}
+          onClose={() => { setShowLibrary(false); setPlacing(null); }}
+          firstPlaced={(() => {
+            const first = {};
+            for (const [dk, m] of Object.entries(mapping || {})) {
+              if (m?.type === "lesson" && (!first[m.lessonId] || dk < first[m.lessonId])) first[m.lessonId] = dk;
+            }
+            return first;
+          })()}
+          placingId={placing?.lesson?.id || null}
+          onPick={setPlacing}
         />
+        </div>
       )}
 
       <div style={{ flex: 1, padding: "20px 24px 40px", minWidth: 0 }}>
+        {placing && (
+          <div style={{
+            position: "sticky", top: headerH + 8, zIndex: 50, marginBottom: 10,
+            padding: "9px 14px", borderRadius: 8, display: "flex", alignItems: "center", gap: 10,
+            background: pathwayColor + "26", border: `1.5px solid ${pathwayColor}`, color: D.text0, fontSize: 13,
+          }}>
+            <span style={{ flex: 1 }}>
+              Click a day to place <strong>{placing.lesson.title}</strong>
+              <span style={{ color: D.text2 }}> · Esc to cancel</span>
+            </span>
+            <button onClick={() => setPlacing(null)} style={{
+              background: "none", border: `1px solid ${D.border1}`, borderRadius: 6, color: D.text1,
+              padding: "3px 10px", cursor: "pointer", fontSize: 12, fontFamily: "inherit",
+            }}>Cancel</button>
+          </div>
+        )}
         {/* Day headers */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginBottom: 6 }}>
           {DAY_SHORT.map(d => (
@@ -3377,7 +3477,11 @@ export default function Phase3({ isActive, selectedCourse: selectedCourseProp, c
                       setDragSource(null);
                     }}
                     onDragEnd={() => { setDragSource(null); }}
-                    onClick={!isNI ? handleDayClick : undefined}
+                    onClick={!isNI
+                      ? (placing
+                          ? (dk) => { const p = placing; setPlacing(null); handleDropFromLibrary(dk, p.lesson, p.unit); }
+                          : handleDayClick)
+                      : undefined}
                   />
                 );
               })}
