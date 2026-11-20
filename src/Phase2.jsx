@@ -18,7 +18,7 @@ import SubPlanModal from "./SubPlanModal";
 import SubPlanPreflightModal from "./SubPlanPreflightModal";
 import BellRingerPush from "./BellRingerPush";
 import DisplayExport from "./DisplayExport";
-import { resolveAgenda, displayClassForCourse, DEFAULT_STANDING_AGENDA, lessonObjective } from "./displayExport";
+import { resolveAgenda, displayClassForCourse, DEFAULT_STANDING_AGENDA, displayObjective, objectiveSource } from "./displayExport";
 import { generateSubPlan } from "./generateSubPlan";
 
 // ─── CONSTANTS (mirrors Phase 1 design system) ───────────────────────────────
@@ -428,15 +428,16 @@ function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNo
   const [localBR, setLocalBR] = useState(currentBR);
   const [brDirty, setBrDirty] = useState(false);
 
-  // Objective: shown from the lesson, editable for the odd case that needs it
-  const [localObjective, setLocalObjective] = useState(lesson?.objective || "");
+  // Objective: the unit's, shown automatically; editable for the odd lesson
+  const shownObjective = displayObjective(lesson, unit);
+  const [localObjective, setLocalObjective] = useState(shownObjective);
   const [editingObjective, setEditingObjective] = useState(false);
   useEffect(() => {
-    setLocalObjective(lesson?.objective || "");
+    setLocalObjective(displayObjective(lesson, unit));
     setEditingObjective(false);
-  }, [lesson?.id]);
-  const saveObjective = () => {
-    if (onObjectiveChange) onObjectiveChange(lesson, localObjective.trim());
+  }, [lesson?.id, unit?.id]);
+  const finishObjective = (patch) => {
+    if (onObjectiveChange) onObjectiveChange(lesson, unit?.id, patch);
     setEditingObjective(false);
   };
 
@@ -1086,9 +1087,9 @@ function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNo
 
       {/* What the TV shows today — live preview of unsaved edits too */}
       {(() => {
-        const draftLesson = { ...lesson, objective: localObjective,
+        const draftLesson = { ...lesson, ...(editingObjective ? { displayObjective: localObjective } : {}),
           agendas: (() => { const a = Array.isArray(lesson?.agendas) ? [...lesson.agendas] : []; while (a.length < dayIndex) a.push(""); a[dayIndex - 1] = localAgenda; return a; })() };
-        const obj = lessonObjective(draftLesson);
+        const obj = displayObjective(draftLesson, unit);
         const steps = resolveAgenda(draftLesson, dayIndex, standingAgenda);
         return (
           <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}` }}>
@@ -1113,48 +1114,72 @@ function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNo
         );
       })()}
 
-      {/* Objective — from the lesson; edit only when a lesson needs it */}
-      <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}` }}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: D.text2, letterSpacing: "0.06em", textTransform: "uppercase", flex: 1 }}>
-            🎯 Objective
-          </div>
-          {!editingObjective && (
-            <button onClick={() => setEditingObjective(true)}
-              style={{ background: "none", border: "none", color: D.text2, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
-              Edit
-            </button>
-          )}
-        </div>
-        {editingObjective ? (
-          <>
-            <textarea
-              autoFocus
-              value={localObjective}
-              onChange={e => setLocalObjective(e.target.value)}
-              style={{ ...inputStyle, minHeight: 56, resize: "vertical", fontSize: 13, lineHeight: 1.5 }}
-            />
-            <div style={{ fontSize: 11, color: D.text2, marginTop: 4 }}>
-              Changes the lesson's objective everywhere, including Master Builder.
+      {/* Objective — the unit's by default; change it for the unit or just this lesson */}
+      {(() => {
+        const source = objectiveSource(lesson, unit);
+        const sourceText = {
+          unit: `Unit objective · ${unit?.title || ""}`,
+          lesson: "This lesson only",
+          fallback: "From the lesson — this unit has no objective yet",
+          none: "",
+        }[source];
+        const changed = localObjective.trim() !== shownObjective;
+        return (
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}` }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 6, gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: D.text2, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                🎯 Objective
+              </div>
+              <div style={{ fontSize: 11, color: source === "lesson" ? "#f59e0b" : D.text2, flex: 1 }}>{sourceText}</div>
+              {!editingObjective && (
+                <button onClick={() => setEditingObjective(true)}
+                  style={{ background: "none", border: "none", color: D.text2, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+                  Edit
+                </button>
+              )}
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button onClick={saveObjective}
-                disabled={localObjective.trim() === (lesson?.objective || "").trim()}
-                style={{ ...btnStyle, color: pathwayColor, borderColor: `${pathwayColor}60`, fontWeight: 600, fontSize: 12, padding: "5px 12px" }}>
-                Save objective
-              </button>
-              <button onClick={() => { setLocalObjective(lesson?.objective || ""); setEditingObjective(false); }}
-                style={{ ...btnStyle, fontSize: 12, padding: "5px 12px" }}>
-                Cancel
-              </button>
-            </div>
-          </>
-        ) : (
-          <div style={{ fontSize: 13, color: lesson?.objective ? D.text1 : "#f59e0b", lineHeight: 1.5 }}>
-            {lesson?.objective || "No objective yet — click Edit to add one"}
+
+            {editingObjective ? (
+              <>
+                <textarea
+                  autoFocus
+                  value={localObjective}
+                  onChange={e => setLocalObjective(e.target.value)}
+                  style={{ ...inputStyle, minHeight: 56, resize: "vertical", fontSize: 13, lineHeight: 1.5 }}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => finishObjective({ unitObjective: localObjective.trim(), lessonOverride: "" })}
+                    disabled={!localObjective.trim()}
+                    style={{ ...btnStyle, color: pathwayColor, borderColor: `${pathwayColor}60`, fontWeight: 600, fontSize: 12, padding: "5px 12px" }}>
+                    Save for the whole unit
+                  </button>
+                  <button onClick={() => finishObjective({ lessonOverride: localObjective.trim() })}
+                    disabled={!changed || !localObjective.trim()}
+                    style={{ ...btnStyle, fontSize: 12, padding: "5px 12px" }}>
+                    This lesson only
+                  </button>
+                  <button onClick={() => { setLocalObjective(shownObjective); setEditingObjective(false); }}
+                    style={{ ...btnStyle, fontSize: 12, padding: "5px 12px" }}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 13, color: shownObjective ? D.text1 : "#f59e0b", lineHeight: 1.5 }}>
+                  {shownObjective || "No objective yet — click Edit to add one for the unit"}
+                </div>
+                {source === "lesson" && (
+                  <button onClick={() => finishObjective({ lessonOverride: "" })}
+                    style={{ background: "none", border: "none", color: pathwayColor, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: "6px 0 0" }}>
+                    Go back to the unit objective
+                  </button>
+                )}
+              </>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* Bell Ringer — editable */}
       <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}`, background: "#0d2d1a22" }}>
@@ -1935,8 +1960,9 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
     } catch (_) {}
   };
 
-  // ── Objective edit from the detail panel — same field as Master Builder
-  const handleObjectiveChange = (lesson, objective) => {
+  // ── Objective edits from the detail panel. Either the unit objective (all
+  // lessons in the unit) or this lesson's override, in a single update.
+  const handleObjectiveChange = (lesson, unitId, { unitObjective, lessonOverride }) => {
     try {
       const curriculum = curricula[selectedCourse];
       if (!curriculum) return;
@@ -1944,7 +1970,9 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
         ...curriculum,
         units: curriculum.units.map(unit => ({
           ...unit,
-          lessons: unit.lessons.map(l => l.id !== lesson.id ? l : { ...l, objective }),
+          ...(unit.id === unitId && unitObjective !== undefined ? { objective: unitObjective } : {}),
+          lessons: unit.lessons.map(l => (l.id !== lesson.id || lessonOverride === undefined) ? l
+            : { ...l, displayObjective: lessonOverride }),
         })),
       };
       const next = { ...curricula, [selectedCourse]: newCurriculum };

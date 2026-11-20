@@ -84,9 +84,21 @@ export function resolveAgenda(lesson, dayIndex, standing) {
     .filter(Boolean);
 }
 
-// The display shows the lesson's objective, the same field as in Master Builder.
-export function lessonObjective(lesson) {
-  return (lesson?.objective || "").trim();
+// What the display shows as the objective:
+//   1. this lesson's override, for the occasional lesson that needs it
+//   2. the unit objective, the normal case
+//   3. the lesson's own objective, so nothing is blank before a unit has one
+export function displayObjective(lesson, unit) {
+  return (lesson?.displayObjective || "").trim()
+    || (unit?.objective || "").trim()
+    || (lesson?.objective || "").trim();
+}
+
+export function objectiveSource(lesson, unit) {
+  if ((lesson?.displayObjective || "").trim()) return "lesson";
+  if ((unit?.objective || "").trim()) return "unit";
+  if ((lesson?.objective || "").trim()) return "fallback";
+  return "none";
 }
 
 export function firstSlidesUrl(lesson) {
@@ -119,7 +131,7 @@ export function buildDayEntry({ dateKey, mapping, lessonIndex, calendarConfig, s
     unit: unit?.title || "",
     day: meta.dayIndex || 1,
     totalDays: meta.totalDays || lesson.estimatedDays || 1,
-    objective: lessonObjective(lesson),
+    objective: displayObjective(lesson, unit),
     agenda: resolveAgenda(lesson, meta.dayIndex, standing),
     slidesUrl: firstSlidesUrl(lesson),
   };

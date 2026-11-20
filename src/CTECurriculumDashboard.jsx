@@ -843,6 +843,13 @@ function UnitEditor({ unit, onSave, onClose }) {
           </select>
         </div>
         <div>
+          <label style={modalLabelStyle}>
+            Unit Objective
+            <span style={{ fontSize: 11, fontWeight: 400, color: "#5a6380", marginLeft: 8 }}>Shown on the classroom display for every lesson in this unit</span>
+          </label>
+          <textarea value={form.objective || ""} onChange={e => update("objective", e.target.value)} style={{ ...modalInputStyle, minHeight: 56, resize: "vertical" }} placeholder="What students will be able to do by the end of this unit" />
+        </div>
+        <div>
           <label style={modalLabelStyle}>Essential Question</label>
           <textarea value={form.essentialQuestion || ""} onChange={e => update("essentialQuestion", e.target.value)} style={{ ...modalInputStyle, minHeight: 60, resize: "vertical" }} />
         </div>
