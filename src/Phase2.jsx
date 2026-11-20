@@ -18,7 +18,7 @@ import SubPlanModal from "./SubPlanModal";
 import SubPlanPreflightModal from "./SubPlanPreflightModal";
 import BellRingerPush from "./BellRingerPush";
 import DisplayExport from "./DisplayExport";
-import { resolveAgenda, displayClassForCourse, DEFAULT_STANDING_AGENDA } from "./displayExport";
+import { resolveAgenda, displayClassForCourse, DEFAULT_STANDING_AGENDA, lessonObjective } from "./displayExport";
 import { generateSubPlan } from "./generateSubPlan";
 
 // ─── CONSTANTS (mirrors Phase 1 design system) ───────────────────────────────
@@ -415,7 +415,7 @@ function QuickNote({ dateStr: ds, existingNote, lesson, onSave, onClose, pathway
 
 // ─── DETAIL PANEL ────────────────────────────────────────────────────────────
 
-function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNoteChange, onBellRingerChange, onAgendaChange, standingAgenda, onInstructionsChange, onResourcesChange, pathwayColor, pushConfig, classroomLog, onClassroomPosted, mondayStr }) {
+function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNoteChange, onBellRingerChange, onAgendaChange, onObjectiveChange, standingAgenda, onInstructionsChange, onResourcesChange, pathwayColor, pushConfig, classroomLog, onClassroomPosted, mondayStr }) {
   const note = weeklyData?.[dateKey]?.note || "";
   const [localNote, setLocalNote] = useState(note);
   const [noteDirty, setNoteDirty] = useState(false);
@@ -427,6 +427,18 @@ function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNo
   const currentBR = getBellRinger(lesson, dayIndex);
   const [localBR, setLocalBR] = useState(currentBR);
   const [brDirty, setBrDirty] = useState(false);
+
+  // Objective: shown from the lesson, editable for the odd case that needs it
+  const [localObjective, setLocalObjective] = useState(lesson?.objective || "");
+  const [editingObjective, setEditingObjective] = useState(false);
+  useEffect(() => {
+    setLocalObjective(lesson?.objective || "");
+    setEditingObjective(false);
+  }, [lesson?.id]);
+  const saveObjective = () => {
+    if (onObjectiveChange) onObjectiveChange(lesson, localObjective.trim());
+    setEditingObjective(false);
+  };
 
   // Display agenda for this day (blank = standing agenda)
   const currentAgenda = Array.isArray(lesson?.agendas) ? (lesson.agendas[dayIndex - 1] || "") : "";
@@ -1071,6 +1083,78 @@ function DetailPanel({ dateKey, lesson, unit, dayMeta, weeklyData, onClose, onNo
           )}
         </div>
       )}
+
+      {/* What the TV shows today — live preview of unsaved edits too */}
+      {(() => {
+        const draftLesson = { ...lesson, objective: localObjective,
+          agendas: (() => { const a = Array.isArray(lesson?.agendas) ? [...lesson.agendas] : []; while (a.length < dayIndex) a.push(""); a[dayIndex - 1] = localAgenda; return a; })() };
+        const obj = lessonObjective(draftLesson);
+        const steps = resolveAgenda(draftLesson, dayIndex, standingAgenda);
+        return (
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: D.text2, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>
+              📺 On the TV today
+            </div>
+            <div style={{ borderRadius: 10, background: "#0b0e14", border: `1.5px solid ${pathwayColor}55`, padding: "12px 14px" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: D.text0 }}>
+                {lesson?.title}
+                {(dayMeta?.totalDays || lesson?.estimatedDays || 1) > 1 && (
+                  <span style={{ fontWeight: 400, color: D.text2, fontSize: 13 }}> · Day {dayIndex} of {dayMeta?.totalDays || lesson?.estimatedDays}</span>
+                )}
+              </div>
+              <div style={{ fontSize: 13, color: obj ? pathwayColor : "#f59e0b", marginTop: 6, lineHeight: 1.45 }}>
+                {obj || "No objective yet"}
+              </div>
+              <ol style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 12.5, color: D.text1, lineHeight: 1.6 }}>
+                {steps.map((s, i) => <li key={i}>{s}</li>)}
+              </ol>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Objective — from the lesson; edit only when a lesson needs it */}
+      <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}` }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: D.text2, letterSpacing: "0.06em", textTransform: "uppercase", flex: 1 }}>
+            🎯 Objective
+          </div>
+          {!editingObjective && (
+            <button onClick={() => setEditingObjective(true)}
+              style={{ background: "none", border: "none", color: D.text2, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+              Edit
+            </button>
+          )}
+        </div>
+        {editingObjective ? (
+          <>
+            <textarea
+              autoFocus
+              value={localObjective}
+              onChange={e => setLocalObjective(e.target.value)}
+              style={{ ...inputStyle, minHeight: 56, resize: "vertical", fontSize: 13, lineHeight: 1.5 }}
+            />
+            <div style={{ fontSize: 11, color: D.text2, marginTop: 4 }}>
+              Changes the lesson's objective everywhere, including Master Builder.
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={saveObjective}
+                disabled={localObjective.trim() === (lesson?.objective || "").trim()}
+                style={{ ...btnStyle, color: pathwayColor, borderColor: `${pathwayColor}60`, fontWeight: 600, fontSize: 12, padding: "5px 12px" }}>
+                Save objective
+              </button>
+              <button onClick={() => { setLocalObjective(lesson?.objective || ""); setEditingObjective(false); }}
+                style={{ ...btnStyle, fontSize: 12, padding: "5px 12px" }}>
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 13, color: lesson?.objective ? D.text1 : "#f59e0b", lineHeight: 1.5 }}>
+            {lesson?.objective || "No objective yet — click Edit to add one"}
+          </div>
+        )}
+      </div>
 
       {/* Bell Ringer — editable */}
       <div style={{ padding: "12px 18px", borderBottom: `1px solid ${D.border0}`, background: "#0d2d1a22" }}>
@@ -1851,6 +1935,24 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
     } catch (_) {}
   };
 
+  // ── Objective edit from the detail panel — same field as Master Builder
+  const handleObjectiveChange = (lesson, objective) => {
+    try {
+      const curriculum = curricula[selectedCourse];
+      if (!curriculum) return;
+      const newCurriculum = {
+        ...curriculum,
+        units: curriculum.units.map(unit => ({
+          ...unit,
+          lessons: unit.lessons.map(l => l.id !== lesson.id ? l : { ...l, objective }),
+        })),
+      };
+      const next = { ...curricula, [selectedCourse]: newCurriculum };
+      setCurricula(next);
+      if (onCurriculaChange) onCurriculaChange(next);
+    } catch (_) {}
+  };
+
   const handleDisplaySettingsChange = (next) => {
     setDisplaySettings(next);
     saveDisplaySettings(next);
@@ -2481,6 +2583,7 @@ export default function Phase2({ isActive, calendarVersion, selectedCourse: sele
             onNoteChange={handleNoteChange}
             onBellRingerChange={handleBellRingerChange}
             onAgendaChange={handleAgendaChange}
+            onObjectiveChange={handleObjectiveChange}
             standingAgenda={displaySettings?.agendas?.[displayClassForCourse(selectedCourse)?.id] || DEFAULT_STANDING_AGENDA}
             onInstructionsChange={handleClassroomInstructionsChange}
             onResourcesChange={handleResourcesChange}

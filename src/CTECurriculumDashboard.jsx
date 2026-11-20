@@ -656,18 +656,6 @@ function LessonEditor({ lesson, onSave, onClose, standards }) {
           <textarea value={form.objective || ""} onChange={e => update("objective", e.target.value)} style={{ ...modalInputStyle, minHeight: 64, resize: "vertical" }} placeholder="One-sentence learning objective or student outcome" />
         </div>
 
-        <div>
-          <label style={modalLabelStyle}>
-            "I can" statement
-            <span style={{ fontSize: 11, fontWeight: 400, color: "#5a6380", marginLeft: 8 }}>Shown on the classroom display — uses the objective if blank</span>
-          </label>
-          <textarea
-            value={form.studentObjective || ""}
-            onChange={e => update("studentObjective", e.target.value)}
-            style={{ ...modalInputStyle, minHeight: 48, resize: "vertical" }}
-            placeholder="I can… (short, in student language)"
-          />
-        </div>
 
         <div>
           <label style={modalLabelStyle}>

@@ -84,8 +84,9 @@ export function resolveAgenda(lesson, dayIndex, standing) {
     .filter(Boolean);
 }
 
-export function studentObjective(lesson) {
-  return (lesson?.studentObjective || "").trim() || (lesson?.objective || "").trim();
+// The display shows the lesson's objective, the same field as in Master Builder.
+export function lessonObjective(lesson) {
+  return (lesson?.objective || "").trim();
 }
 
 export function firstSlidesUrl(lesson) {
@@ -118,7 +119,7 @@ export function buildDayEntry({ dateKey, mapping, lessonIndex, calendarConfig, s
     unit: unit?.title || "",
     day: meta.dayIndex || 1,
     totalDays: meta.totalDays || lesson.estimatedDays || 1,
-    objective: studentObjective(lesson),
+    objective: lessonObjective(lesson),
     agenda: resolveAgenda(lesson, meta.dayIndex, standing),
     slidesUrl: firstSlidesUrl(lesson),
   };
